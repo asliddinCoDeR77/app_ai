@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uzbek Dependency Parser</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-theme="light">
+    <div class="container">
+        <header class="header">
+            <h1 class="animate-fade-in">Dependency App</h1>
+            <div class="theme-switch" onclick="toggleTheme()">
+                <span id="theme-icon">🌙</span>
+                <span style="font-size: 14px; font-weight: 600;">Rejimni o'zgartirish</span>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <section class="card glass animate-slide-up">
+                <label class="section-title">Asl matn</label>
+                <textarea id="inputText" placeholder="Tahlil uchun biror gap kiriting...">Tarix hayotning haqiqiy o‘qituvchisidir.</textarea>
+                <button class="btn btn-primary" onclick="analyzeAI()">
+                    <span>✨</span> TAHLIL QILISH
+                </button>
+                <div class="loader" id="spinner"></div>
+            </section>
+
+            <section id="resultArea" style="display: none;">
+                <div class="card glass animate-slide-up">
+                    <label class="section-title">Matn tahlili (Sintaktik Graf)</label>
+                    <div class="visual-container" id="visualBox">
+                        <svg id="svg-canvas">
+                            <defs>
+                                <marker id="arrow" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+                                    <polygon points="0 0, 10 3.5, 0 7" fill="currentColor" />
+                                </marker>
+                            </defs>
+                        </svg>
+                        <div class="tokens-row" id="tokensRow"></div>
+                    </div>
+                </div>
+
+                <div class="card glass animate-slide-up" style="animation-delay: 0.2s;">
+                    <div class="table-header">
+                        <label class="section-title">Lingvistik ko'rinish</label>
+                        <button class="btn btn-success" onclick="downloadCSV()">
+                            📥Yuklash
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Token</th>
+                                    <th>Lemma</th>
+                                    <th>Tag</th>
+                                    <th>Head (Hokim)</th>
+                                    <th>Deprel (Bog'lanish)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
