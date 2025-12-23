@@ -1,11 +1,25 @@
 const API_KEY = "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";
 let currentData = [];
 
+// --- REJIMNI BOSHQARISH (Theme Toggle) ---
 function toggleTheme() {
     const body = document.body;
+    const themeIcon = document.getElementById('theme-icon');
     const isDark = body.getAttribute('data-theme') === 'dark';
-    body.setAttribute('data-theme', isDark ? 'light' : 'dark');
-    document.getElementById('theme-icon').innerText = isDark ? '🌙' : '☀️';
+    
+    // Rejimni almashtirish
+    const newTheme = isDark ? 'light' : 'dark';
+    body.setAttribute('data-theme', newTheme);
+    
+    // Ikonkani yangilash
+    if (themeIcon) {
+        themeIcon.innerText = isDark ? '🌙' : '☀️';
+    }
+
+    // SVG ranglarini yangi rejimga moslab qayta chizish
+    if (currentData.length > 0) {
+        drawLines();
+    }
 }
 
 async function analyzeAI() {
@@ -18,24 +32,9 @@ async function analyzeAI() {
     results.style.display = 'none';
 
     const prompt = `
-    Siz o'zbek tili korpus lingvistikasi bo'yicha ekspert tizimsiz.
-    Vazifa: Quyidagi gapni Universal Dependencies (UD) bo'yicha statistik tahlil qiling.
-    
-    NAMUNA (Training Data Pattern):
-    Gap: "Tarix hayotning o'qituvchisidir."
-    Javob:
-    1. Tarix -> nsubj -> o'qituvchisidir (Root)
-    2. hayotning -> nmod:poss -> o'qituvchisidir (Root)
-    3. o'qituvchisidir -> root -> (0)
-    4. . -> punct -> o'qituvchisidir (Root)
-
-    TAHLIL QILINADIGAN GAP: "${text}"
-    
-    TALAB:
-    Gapdagi eng asosiy mazmuniy markazni (Root) toping va "Ega" (nsubj), hamda "Tinish belgilari"ni (punct) o'sha markazga bog'lang.
-    Faqat JSON formatida qaytaring:
-    [{"tokenID": 1, "token": "...", "Lemma": "...", "Tag": "...", "Head": 0, "Deprel": "root"}]
-    `;
+    O'zbek tili UD (Universal Dependencies) tahlilchisi sifatida quyidagi gapni tahlil qil: "${text}"
+    QAT'IY TEGSETLAR: nsubj, obj, obl, advmod, amod, nmod:poss, compound, conj, cc, mark, cop, aux, punct, root, acl, xcomp, det.
+    FORMAT: Faqat JSON array qaytar. Kalitlar: "tokenID", "token", "Lemma", "Tag", "Head", "Deprel".`;
 
     try {
         const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -47,55 +46,33 @@ async function analyzeAI() {
             body: JSON.stringify({
                 model: "llama-3.3-70b-versatile",
                 messages: [
-                    { role: "system", content: "Siz faqat JSON qaytaruvchi lingvistik parsersiz." },
+                    { role: "system", content: "Siz lingvistik parsersiz. Faqat toza JSON qaytaring." },
                     { role: "user", content: prompt }
                 ],
-                temperature: 0.1 
+                temperature: 0.1
             })
         });
 
-        if (!response.ok) throw new Error("API xatosi");
-
         const data = await response.json();
         const content = data.choices[0].message.content;
-        
         const jsonMatch = content.match(/\[.*\]/s);
-        if (!jsonMatch) throw new Error("JSON formati noto'g'ri");
-        let parsedData = JSON.parse(jsonMatch[0]);
-
-
-        const rootItem = parsedData.find(item => item.Deprel.toLowerCase() === 'root' || item.Head === 0);
         
-        if (rootItem) {
-         
-            rootItem.Head = 0; 
-            const rootID = rootItem.tokenID;
+        if (!jsonMatch) throw new Error("JSON topilmadi");
+        
+        let rawData = JSON.parse(jsonMatch[0]);
+        currentData = rawData.map(item => ({
+            tokenID: item.tokenID || item.id || 0,
+            token: item.token || item.word || "",
+            Lemma: item.Lemma || item.lemma || "-",
+            Tag: item.Tag || item.tag || item.pos || "X",
+            Head: parseInt(item.Head !== undefined ? item.Head : item.head),
+            Deprel: item.Deprel || item.deprel || "root"
+        }));
 
-            parsedData = parsedData.map(item => {
-                const dep = item.Deprel.toLowerCase();
-                const tag = item.Tag.toUpperCase();
-                const token = item.token;
-
- 
-                if (dep.includes('nsubj') && item.Head !== rootID) {
-                    item.Head = rootID;
-                }
-                
-           
-                if ((tag === 'PUNCT' || dep === 'punct' || ['.','!','?'].includes(token)) && item.Head !== rootID) {
-                    item.Head = rootID;
-                    item.Deprel = 'punct';
-                }
-
-                return item;
-            });
-        }
-
-        currentData = parsedData;
         renderUI();
     } catch (e) {
         console.error(e);
-        alert("Xatolik yuz berdi. Qaytadan urinib ko'ring.");
+        alert("Xatolik yuz berdi.");
     } finally {
         spinner.style.display = 'none';
     }
@@ -105,13 +82,7 @@ function renderUI() {
     document.getElementById('resultArea').style.display = 'block';
     const row = document.getElementById('tokensRow');
     const body = document.getElementById('tableBody');
-    const svg = document.getElementById('svg-canvas');
-
     row.innerHTML = ''; body.innerHTML = '';
-   
-    const defs = svg.querySelector('defs'); 
-    svg.innerHTML = ''; 
-    if(defs) svg.appendChild(defs);
 
     currentData.forEach((item) => {
         row.innerHTML += `
@@ -124,7 +95,7 @@ function renderUI() {
             <tr>
                 <td>${item.tokenID}</td>
                 <td><b>${item.token}</b></td>
-                <td>${item.Lemma || '-'}</td>
+                <td>${item.Lemma}</td>
                 <td>${item.Tag}</td>
                 <td>${item.Head}</td>
                 <td style="color:var(--primary); font-weight:700">${item.Deprel}</td>
@@ -137,74 +108,86 @@ function renderUI() {
 function drawLines() {
     const svg = document.getElementById('svg-canvas');
     const box = document.getElementById('visualBox');
-    
+    if (!svg || !box) return;
 
     svg.setAttribute("width", box.scrollWidth);
-    svg.setAttribute("height", 300); 
+    svg.setAttribute("height", 350);
     
-    const color = getComputedStyle(document.body).getPropertyValue('--primary') || '#4338ca';
-    const bgColor = getComputedStyle(document.body).backgroundColor || '#ffffff';
+    // Defs ni saqlab qolgan holda tozalash
+    const defs = svg.querySelector('defs'); 
+    svg.innerHTML = ''; 
+    if(defs) svg.appendChild(defs);
+
+    // CSS dan joriy ranglarni olish (Dynamic Theme Support)
+    const style = getComputedStyle(document.body);
+    const color = style.getPropertyValue('--primary').trim() || '#4338ca';
+    const bgColor = style.getPropertyValue('--card').trim() || '#ffffff';
 
     currentData.forEach(item => {
-        if (!item.Head || item.Head == 0) return;
-        
-        const s = document.getElementById(`node-${item.tokenID}`);
-        const e = document.getElementById(`node-${item.Head}`);
-        if(!s || !e) return;
+        const node = document.getElementById(`node-${item.tokenID}`);
+        if(!node) return;
 
-        const r1 = s.getBoundingClientRect();
-        const r2 = e.getBoundingClientRect();
+        const rect = node.getBoundingClientRect();
         const c = box.getBoundingClientRect();
+        const x1 = rect.left + rect.width/2 - c.left;
+        const yBase = 180;
 
-        const x1 = r1.left + r1.width/2 - c.left;
-        const x2 = r2.left + r2.width/2 - c.left;
-        const yBase = 160; 
-        
-        const distance = Math.abs(x1 - x2);
- 
-        const h = Math.min(distance * 0.5, 140);
+        // --- ROOT ---
+        if (item.Head === 0 || item.Deprel.toLowerCase() === 'root') {
+            const rootPath = createSVGElement("path", {
+                "d": `M ${x1} 30 L ${x1} ${yBase - 35}`,
+                "stroke": "#f59e0b",
+                "stroke-width": "3",
+                "marker-end": "url(#arrow)"
+            });
+            const rootLabel = createSmartLabel(x1, 25, "root", "#f59e0b", bgColor);
+            svg.appendChild(rootPath);
+            svg.appendChild(rootLabel.halo);
+            svg.appendChild(rootLabel.main);
+            return;
+        }
 
+        // --- BOG'LANISHLAR ---
+        const parent = document.getElementById(`node-${item.Head}`);
+        if(!parent) return;
 
-        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        path.setAttribute("d", `M ${x1} ${yBase} Q ${(x1+x2)/2} ${yBase - h} ${x2} ${yBase}`);
-        path.setAttribute("stroke", color);
-        path.setAttribute("fill", "none");
-        path.setAttribute("stroke-width", "2");
-        path.setAttribute("marker-end", "url(#arrow)");
-        
+        const pRect = parent.getBoundingClientRect();
+        const x2 = pRect.left + pRect.width/2 - c.left;
+        const dist = Math.abs(x1 - x2);
+        const h = Math.min(dist * 0.4, 150);
 
-        const apexY = yBase - (h / 2);
-        
-        const txt = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        txt.setAttribute("x", (x1+x2)/2);
-        txt.setAttribute("y", apexY - 5); 
-        
-        txt.setAttribute("text-anchor", "middle");
-        txt.setAttribute("font-size", "11px");
-        txt.setAttribute("font-weight", "bold");
-        txt.setAttribute("fill", color);
+        const path = createSVGElement("path", {
+            "d": `M ${x1} ${yBase} Q ${(x1+x2)/2} ${yBase - h} ${x2} ${yBase}`,
+            "stroke": color,
+            "fill": "none",
+            "stroke-width": "2",
+            "marker-end": "url(#arrow)"
+        });
 
-        
-    
-        txt.style.paintOrder = "stroke"; 
-        txt.setAttribute("stroke", bgColor === 'rgba(0, 0, 0, 0)' ? 'white' : bgColor); 
-        txt.setAttribute("stroke-width", "4px");
-        txt.setAttribute("stroke-linecap", "round");
-        txt.setAttribute("stroke-linejoin", "round");
-        
-        txt.textContent = item.Deprel;
-
+        const label = createSmartLabel((x1+x2)/2, yBase - (h/2) - 10, item.Deprel, color, bgColor);
         svg.appendChild(path);
-        svg.appendChild(txt);
+        svg.appendChild(label.halo);
+        svg.appendChild(label.main);
     });
 }
 
-function downloadCSV() {
-    let csv = "\uFEFFID,Token,Lemma,Tag,Head,Deprel\n";
-    currentData.forEach(r => csv += `${r.tokenID},${r.token},${r.Lemma},${r.Tag},${r.Head},${r.Deprel}\n`);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'lingvistik_tahlil.csv';
-    a.click();
+function createSVGElement(tag, attrs) {
+    const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (let k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+}
+
+function createSmartLabel(x, y, text, color, bg) {
+    const main = createSVGElement("text", {
+        "x": x, "y": y, "text-anchor": "middle",
+        "font-size": "12px", "font-weight": "bold", "fill": color
+    });
+    main.textContent = text;
+
+    const halo = main.cloneNode(true);
+    halo.setAttribute("stroke", bg);
+    halo.setAttribute("stroke-width", "5px");
+    halo.style.paintOrder = "stroke";
+
+    return { main, halo };
 }
