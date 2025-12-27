@@ -269,7 +269,6 @@ td {
 tr:last-child td { border-bottom: none; }
 tr:hover td { background-color: rgba(0,0,0,0.02); }
 
-/* --- LOADER --- */
 .loader {
     display: none;
     width: 40px; height: 40px;

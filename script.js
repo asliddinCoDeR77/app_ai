@@ -1,7 +1,6 @@
 const API_KEY = "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";
 let currentData = [];
 
-// --- THEME ---
 function toggleTheme() {
     const body = document.body;
     const themeIcon = document.getElementById('theme-icon');
@@ -11,19 +10,15 @@ function toggleTheme() {
     if (currentData.length) setTimeout(drawLines, 100);
 }
 
-// --- 1. ASOSIY TAHLIL FUNKSIYASI ---
 async function analyzeAI() {
     const textInput = document.getElementById("inputText");
     const text = textInput ? textInput.value.trim() : "";
     
     if (!text) { alert("Matn kiriting!"); return; }
 
-    // EKRANNI TOZALASH
     document.getElementById("spinner").style.display = "block";
     document.getElementById("resultArea").style.display = "none";
 
-    // 1-QADAM: JavaScript so'zlarni o'zi ajratadi (AI ga ishonmaymiz)
-    // Bu yerda so'zlar va tinish belgilarni ajratamiz
     const rawTokens = text.match(/[\w'’‘]+|[.,!?;:]/g) || [];
     
     if (rawTokens.length === 0) {
@@ -32,23 +27,44 @@ async function analyzeAI() {
         return;
     }
 
-    // AI ga tayyor ro'yxatni beramiz
     const tokenListString = rawTokens.map((t, i) => `${i + 1}. ${t}`).join("\n");
 
-    const prompt = `Siz UD 2.0 bo'yicha O'zbek tili ekspertisiz.
-Quyidagi raqamlangan so'zlar ro'yxatiga sintaktik tahlil bering.
+    const prompt = `Siz O'zbek tili sintaksisi mutaxassisisiz. 
+Quyidagi so'zlar ro'yxatini tahlil qiling.
 
 SO'ZLAR:
 ${tokenListString}
 
-QAT'IY QOIDALAR:
-1. "head": 0 bo'lgan faqat BITTA "root" (fe'l) bo'lsin.
-2. "nsubj" (ega) va "advmod" (ravish) bevosita root (fe'l) ga bog'lansin.
-3. Boshqa so'zlarni ham mantiqiy bog'lang.
-4. Javob faqat JSON array bo'lsin. ID lar yuqoridagi ro'yxat bilan bir xil bo'lsin.
+QAT'IY QOIDALAR VA RO'YXATLAR:
 
-JAVOB FORMATI:
-[{"id":1, "token":"...", "lemma":"...", "tag":"NOUN/VERB/ADV...", "head":2, "deprel":"nsubj"}]`;
+1. FQAT QUYIDAGI POS TAGLARDAN FOYDALANING (Boshqasi mumkin emas!):
+   - N (Ot)
+   - JJ (Sifat)
+   - VB (Fe'l)
+   - NUM (Son)
+   - RR (Ravish)
+   - P (Olmosh)
+   - C (Bog'lovchi)
+   - II (Ko'makchi)
+   - Prt (Yuklama)
+   - MD (Modal so'z)
+   - UH (Undov so'z)
+   - IM (Taqlid so'zlar)
+   - NER (Atoqli otlar)
+   - IB (Iboralar)
+   - M (Maqollar)
+   - PUNCT (Tinish belgisi)
+
+2. FAQAT QUYIDAGI DEPREL (BOG'LANISH)LARDAN FOYDALANING:
+   - root, nsubj, obj, obl, advmod, amod, nmod:poss, compound, conj, cc, mark, cop, aux, punct, acl, xcomp, discourse, advcl, advmod:emph, vocative, nummod.
+
+3. SINTAKTIK QOIDALAR:
+   - "head": 0 bo'lgan faqat BITTA "root" (VB yoki predikativ N) bo'lsin.
+   - "nsubj" (ega) va "advmod" (ravish) bevosita rootga bog'lansin.
+   - Tinish belgilari (PUNCT) o'zidan oldingi so'zga bog'lansin (punct).
+
+JAVOB FORMATI (JSON array):
+[{"id":1, "token":"...", "lemma":"...", "tag":"N", "head":2, "deprel":"nsubj"}]`;
 
     try {
         const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -56,9 +72,9 @@ JAVOB FORMATI:
             headers: { "Authorization": `Bearer ${API_KEY}`, "Content-Type": "application/json" },
             body: JSON.stringify({
                 model: "llama-3.3-70b-versatile",
-                temperature: 0, // Har doim bir xil javob uchun
+                temperature: 0,
                 messages: [
-                    { role: "system", content: "Faqat JSON array qaytar." },
+                    { role: "system", content: "Faqat JSON array qaytar. Hech qanday tushuntirish yozma." },
                     { role: "user", content: prompt }
                 ]
             })
@@ -74,22 +90,18 @@ JAVOB FORMATI:
 
         let parsed = JSON.parse(jsonMatch[0]);
 
-        // 2-QADAM: JAVOBNI MANTIQIY TEKSHIRISH (FIXER)
-        // Biz yuborgan so'zlar soni bilan AI javobi teng bo'lishi shart
         currentData = parsed.map((item, index) => {
-            // Agar AI ID ni adashtirsa, majburan o'zimiznikini qo'yamiz
             const realToken = rawTokens[index] || item.token;
             return {
                 id: index + 1,
                 token: realToken,
                 lemma: item.lemma || realToken,
-                tag: (item.tag || item.pos || "NOUN").toUpperCase(),
+                tag: item.tag || item.pos || "N", 
                 head: parseInt(item.head) || 0,
                 deprel: item.deprel || "dep"
             };
         });
 
-        // 3-QADAM: BOG'LANISHLARNI TO'G'RILASH (LIGVISTIK FIX)
         fixGraphLogic();
 
         renderUI();
@@ -102,42 +114,34 @@ JAVOB FORMATI:
     }
 }
 
-// --- 2. GRAF MANTIG'INI TUZATISH (ENGINE) ---
 function fixGraphLogic() {
-    // 1. Rootni topamiz
     let root = currentData.find(t => t.head === 0);
     
-    // Agar root yo'q bo'lsa yoki ko'p bo'lsa, oxirgi fe'lni root qilamiz
     if (!root) {
-        const verbs = currentData.filter(t => t.tag === "VERB");
+        const verbs = currentData.filter(t => t.tag === "VB");
         root = verbs.length > 0 ? verbs[verbs.length - 1] : currentData[currentData.length - 1];
         root.head = 0;
         root.deprel = "root";
     }
 
-    // Boshqa barcha root bo'lib qolganlarni shu rootga ulaymiz
     currentData.forEach(t => {
         if (t.id !== root.id && t.head === 0) {
             t.head = root.id;
             t.deprel = "conj";
         }
         
-        // O'ziga o'zi bog'lanishni yo'qotish
         if (t.head === t.id) t.head = root.id;
 
-        // Ega (nsubj) va Ravish (advmod) ni to'g'ridan-to'g'ri rootga ulash
-        // (Siz aytgan "juda" -> "charchadim" qoidasi shu yerda ishlaydi)
-        if ((t.deprel === "nsubj" || t.tag === "ADV") && t.head !== root.id && t.head !== 0) {
-            // Agar u boshqa fe'lga bog'lanmagan bo'lsa, asosiy rootga ula
+
+        if ((t.deprel === "nsubj" || t.tag === "RR") && t.head !== root.id && t.head !== 0) {
             const parent = currentData.find(p => p.id === t.head);
-            if (parent && parent.tag !== "VERB") {
+            if (parent && parent.tag !== "VB") {
                 t.head = root.id;
             }
         }
     });
 }
 
-// --- 3. UI CHIZISH ---
 function renderUI() {
     document.getElementById("resultArea").style.display = "block";
     const tokensRow = document.getElementById("tokensRow");
@@ -147,7 +151,6 @@ function renderUI() {
     tableBody.innerHTML = "";
 
     currentData.forEach(t => {
-        // Grafik uchun elementlar
         tokensRow.innerHTML += `
             <div class="token-item" id="node-${t.id}">
                 <span class="tag-badge">${t.tag}</span>
@@ -155,7 +158,6 @@ function renderUI() {
             </div>
         `;
 
-        // Jadval uchun qatorlar
         tableBody.innerHTML += `
             <tr>
                 <td>${t.id}</td>
@@ -168,17 +170,14 @@ function renderUI() {
         `;
     });
 
-    // Chizishni biroz kechiktiramiz, DOM yuklanib olishi uchun
     setTimeout(drawLines, 200);
 }
 
-// --- 4. DRAW LINES (ANIQ KOORDINATALAR) ---
 function drawLines() {
     const svg = document.getElementById("svg-canvas");
     const box = document.getElementById("visualBox");
     if (!svg || !box) return;
 
-    // SVG tozalash va sozlash
     const color = getComputedStyle(document.body).getPropertyValue("--primary").trim() || "#4338ca";
     svg.innerHTML = `
         <defs>
@@ -188,33 +187,27 @@ function drawLines() {
         </defs>
     `;
     
-    // Konteyner o'lchamini olish (Scrollni hisobga olib)
     svg.setAttribute("width", box.scrollWidth);
     svg.setAttribute("height", 300);
 
-    const baseY = 180; // So'zlar tepasidagi chiziq balandligi
+    const baseY = 180; 
 
     currentData.forEach(t => {
         const node = document.getElementById(`node-${t.id}`);
         if (!node) return;
 
-        // So'zning markazini topish (Scrollga nisbatan to'g'rilash)
         const boxRect = box.getBoundingClientRect();
         const nodeRect = node.getBoundingClientRect();
-        
-        // X1 - joriy so'z markazi
         const x1 = (nodeRect.left - boxRect.left) + box.scrollLeft + (nodeRect.width / 2);
 
-        // 1. ROOT CHIZISH (Tik tushadigan chiziq)
         if (t.head === 0) {
             const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-            path.setAttribute("d", `M ${x1} 40 L ${x1} ${baseY - 10}`); // Tepadan pastga
+            path.setAttribute("d", `M ${x1} 40 L ${x1} ${baseY - 10}`);
             path.setAttribute("stroke", color);
             path.setAttribute("stroke-width", "2");
             path.setAttribute("marker-end", "url(#arrow)");
             svg.appendChild(path);
 
-            // Root yozuvi
             const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
             text.setAttribute("x", x1);
             text.setAttribute("y", 30);
@@ -223,21 +216,15 @@ function drawLines() {
             text.setAttribute("font-weight", "bold");
             text.textContent = "ROOT";
             svg.appendChild(text);
-        } 
-        // 2. BOG'LANISH CHIZISH (Yoy)
-        else {
+        } else {
             const headNode = document.getElementById(`node-${t.head}`);
             if (headNode) {
                 const headRect = headNode.getBoundingClientRect();
-                // X2 - Hokim so'z markazi
                 const x2 = (headRect.left - boxRect.left) + box.scrollLeft + (headRect.width / 2);
-
-                // Yoy balandligi masofaga qarab o'zgaradi
                 const dist = Math.abs(x1 - x2);
                 const arcHeight = Math.min(dist * 0.4, 100) + 20;
 
                 const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-                // M=Hokim, Q=Egilish, L=Qaram (Strelka qaramga boradi)
                 path.setAttribute("d", `M ${x2} ${baseY} Q ${(x1 + x2) / 2} ${baseY - arcHeight} ${x1} ${baseY}`);
                 path.setAttribute("stroke", color);
                 path.setAttribute("fill", "none");
@@ -245,11 +232,9 @@ function drawLines() {
                 path.setAttribute("marker-end", "url(#arrow)");
                 svg.appendChild(path);
 
-                // Label (nsubj, obj...)
                 const labelX = (x1 + x2) / 2;
                 const labelY = baseY - (arcHeight / 2) - 10;
                 
-                // Oq fon (yozuv ko'rinishi uchun)
                 const bg = document.createElementNS("http://www.w3.org/2000/svg", "text");
                 bg.setAttribute("x", labelX);
                 bg.setAttribute("y", labelY);
@@ -273,7 +258,6 @@ function drawLines() {
     });
 }
 
-// --- CSV ---
 function downloadCSV() {
     if (!currentData.length) return alert("Ma'lumot yo'q!");
     let csv = "ID,Token,Lemma,Tag,Head,Deprel\n";
