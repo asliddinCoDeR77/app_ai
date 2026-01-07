@@ -1,4 +1,4 @@
-const API_KEY = "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";
+const API_KEY = "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";
 let currentData = [];
 
 function toggleTheme() {
@@ -269,4 +269,5 @@ function downloadCSV() {
     link.href = URL.createObjectURL(blob);
     link.download = "tahlil.csv";
     link.click();
+
 }
