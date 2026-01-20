@@ -1,4 +1,4 @@
-const API_KEY = "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";
+const API_KEY = "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";
 let currentData = [];
 
 function toggleTheme() {
@@ -271,4 +271,5 @@ function downloadCSV() {
     link.click();
 
 }
+
 
